@@ -1,15 +1,18 @@
+import fetch from 'node-fetch'
 import cors from 'cors'
 import express from 'express'
 import Http from 'http'
+import bodyParser from 'body-parser'
 import session from 'express-session'
 import SessionFileStore from 'session-file-store'
+
 import User from './user'
 import Auth from './auth'
 
 const app = express()
 app.use(cors({
   credentials: true,
-  origin: true,
+  origin: true,//https://${process.env.VHOST_BASE}`,
 }))
 app.use(session({
   cookie: {
@@ -26,8 +29,22 @@ app.use(session({
   })
 }))
 
-app.use('/user', User())
+app.get('/foo', (req, res) => {
+  res.send('foo')
+})
+// --
+
+app.use('/user', User({
+  path: process.env.USER_STORE_PATH,
+  fileExtension: process.env.USER_STORE_EXTENSION,
+}))
+
+// /user/users?id=${id}
+// /user/users/
+
 app.use('/auth', Auth())
+
+// --
 
 const http = Http.Server(app)
 http.listen(8080, () => {
