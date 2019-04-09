@@ -4,6 +4,8 @@ import fse from 'fs-extra'
 import path from 'path'
 
 import {authMiddleware} from '../auth'
+import DB from '../utils/DB'
+import touchSession from '../touchSession'
 
 async function writeOneFile(targetName, fileContents) {
   console.log('writeOneFile', targetName, fileContents)
@@ -14,47 +16,24 @@ async function writeOneFile(targetName, fileContents) {
   await fse.rename(`${targetDirName}/${targetBaseName}.tmp`, targetName)
 }
 
-export default function User({path, fileExtension = '.json'}) {
+export default function User() {
+  const path = process.env.USER_STORE_PATH
+  const fileExtension = process.env.USER_STORE_EXTENSION
   const app = express()
 
   app.locals.title = 'users'
   app.use(bodyParser.json())
   app.use(bodyParser.urlencoded({ extended: false }))
+  app.use(touchSession())
 
-  const databaseFile = path + fileExtension
-  const databasePromise = new Promise(function(resolve, reject) {
-    fse.exists(databaseFile).then(async result => {
-      console.log('databaseFile exists', result)
-      if (result) {
-        const database = await fse.readFile(databaseFile).then(database => {
-          database = JSON.parse(database)
-          console.log('loaded database', database)
-          resolve(database)
-        }, reject)
-      } else {
-        return {
-          userIdSequence: 0,
-          users: {},
-          idsByProvider: {},
-        }
-      }
-    }, reject).then(resolve)
-  })
-
-  async function writeDatabase() {
-    console.log('writeDatabase')
-    const database = await databasePromise
-    console.log('database', database)
-    writeOneFile(databaseFile, JSON.stringify(database))
-  }
+  const database = new DB(path)
 
   app.get('/me', authMiddleware(), async (req, res) => {
     const {user: {userId} = {}} = req
     console.log('user:/me', userId)
     if (userId !== undefined) {
-	    const {users} = await databasePromise
-    	const {[userId]: user} = users
-      const me = {emails: {}}
+      const user = await database.getRow('users', userId)
+      const me = {userId, emails: {}}
       Object.entries(user.providers).map(([providerName, providerProfile]) => {
         const {displayName, emails, photos} = providerProfile
         console.log('emails', emails)
@@ -72,15 +51,19 @@ export default function User({path, fileExtension = '.json'}) {
       console.log('me', me)
       res.send(me)
     } else {
-      res.status(404).send('')
+      res.status(404)
+      if (req.accepts('application/json')) {
+        res.send({})
+      } else {
+        res.send('')
+      }
     }
   })
 
   app.get('/user/:userId', async (req, res) => {
-    const {users} = await databasePromise
     const {params: {userId}} = req
     //console.log('GET:user', userId)
-    res.send(users[userId])
+    res.send(await database.getRow('users', userId))
   })
   /*
   app.post('/user/:id', (req, res) => {
@@ -89,6 +72,14 @@ export default function User({path, fileExtension = '.json'}) {
     res.send('foo')
   })
   */
+  app.post('/user', async (req, res) => {
+    const {username, password} = req.body
+    const userLogin = await database.getRow('user-login', username)
+    if (userLogin.currentPassword === password) {
+      res.send(await database.getRow('user', userLogin.userId))
+    }
+    res.send({}).status(404)
+  })
   app.post('/provider/:userId?', async (req, res) => {
     const {
       body: account,
@@ -96,31 +87,24 @@ export default function User({path, fileExtension = '.json'}) {
     } = req
     //console.log('POST:provider', userId, account)
     const {name, id, profile} = account
-    const database = await databasePromise
-    console.log('database', database)
-    const {users, idsByProvider} = database
-    const idByProvider = idsByProvider[name] || (idsByProvider[name] = {})
+    const idByProvider = await database.getRow('providers', name).then(data => data || {})
 
-		const user = userId ? JSON.parse(JSON.stringify(users[userId])) : (users[database.userIdSequence] = {id: database.userIdSequence++, providers: {}})
+		const user = userId && await database.getRow('users', userId) || ({id: await database.nextSequence('userId'), providers: {}})
     const existingProviderProfile = user.providers[name]
     if (existingProviderProfile) {
       const existingProviderId = idByProvider[existingProviderProfile.id]
       if (existingProviderId !== user.id) {
-        const otherUser = users[existingProviderId]
+        const otherUser = await database.getRow('users', existingProviderId)
         delete otherUser.providers[name]
+        await database.setRow('users', existingProviderId)
         delete idByProvider[existingProviderProfile.id]
       }
     }
     user.providers[name] = profile
     idByProvider[id] = user.id
-    users[user.id] = user
     console.log('-| result:', user)
-    try {
-      await writeDatabase()
-    } catch (e) {
-      console.error(e)
-      res.error(e)
-    }
+    await database.setRow('providers', name, idByProvider)
+    await database.setRow('users', user.id, user)
     res.send({userId: user.id})
   })
   /*

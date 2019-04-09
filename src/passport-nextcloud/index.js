@@ -18,22 +18,24 @@ class NextcloudStrategy extends OAuth2Strategy {
     //console.log('userProfileUrl', url.format(userURL))
     this._oauth2.useAuthorizationHeaderforGET(true)
     this._oauth2.get(url.format(userURL), accessToken, (err, body, res) => {
-      //console.log('nextcloud:userProfile', err, body)
+      console.log('nextcloud:userProfile', err, body)
       if (err) {
         return done(new InternalOAuthError('Failed to fetch user profile', err))
       }
       const json = JSON.parse(body)
       const nextcloudProfile = json.ocs.data
-      //console.log('nextcloudProfile', nextcloudProfile)
+      console.log('nextcloudProfile', nextcloudProfile)
       const authUser = {
         id: nextcloudProfile.id,
-        email: nextcloudProfile.email,
+        emails: [
+          {value: nextcloudProfile.email},
+        ],
         displayName: nextcloudProfile['display-name'],
-        provider: {
-          nextCloud: nextcloudProfile,
-        },
+        provider: 'nextcloud',
+        _json: json,
+        _raw: body
       }
-      return done(null, nextcloudProfile)
+      return done(null, authUser)
     })
   }
 }

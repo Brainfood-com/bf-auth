@@ -14,9 +14,11 @@ app.use(cors({
   credentials: true,
   origin: true,//https://${process.env.VHOST_BASE}`,
 }))
+const AUTH_SESSION_TTL = parseInt(process.env.AUTH_SESSION_TTL)
 app.use(session({
   cookie: {
     domain: process.env.AUTH_COOKIE_DOMAIN,
+    maxAge:  AUTH_SESSION_TTL,
   },
   name: process.env.AUTH_COOKIE_NAME,
   proxy: true,
@@ -24,20 +26,14 @@ app.use(session({
   saveUninitialized: false,
   secret: process.env.AUTH_SECRET,
   store: new (SessionFileStore(session))({
-    ttl: parseInt(process.env.AUTH_SESSION_TTL),
+    ttl: AUTH_SESSION_TTL,
     path: process.env.AUTH_SESSION_PATH,
   })
 }))
 
-app.get('/foo', (req, res) => {
-  res.send('foo')
-})
 // --
 
-app.use('/user', User({
-  path: process.env.USER_STORE_PATH,
-  fileExtension: process.env.USER_STORE_EXTENSION,
-}))
+app.use('/user', User())
 
 // /user/users?id=${id}
 // /user/users/

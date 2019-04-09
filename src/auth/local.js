@@ -33,6 +33,6 @@ export function build(name, {passport, userDb}, resultHandler) {
 `
 	  )
   })
-  app.post('/', passport.authorize(name, {}), resultHandler)
+  app.post('/', passport.authorize(name, {}))
   return app
 }

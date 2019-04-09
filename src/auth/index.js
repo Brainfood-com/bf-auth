@@ -2,12 +2,14 @@ import express from 'express'
 import bodyParser from 'body-parser'
 import cookie from 'cookie'
 import cookieParser from 'cookie-parser'
+import path from 'path'
 import setCookieParser from 'set-cookie-parser'
 import fetch from 'node-fetch'
 
 import { Authenticator as Passport } from 'passport'
 
 import {baseUrl} from '../utils'
+import touchSession from '../touchSession'
 import * as Local from './local'
 import * as OAuth2 from './oauth2'
 import * as Facebook from './facebook'
@@ -23,9 +25,9 @@ class UserAPIWrapper {
   }
 
   async attachAccount(user, account) {
-    console.log('attachAccount')
-    console.log('-| user:', user)
-    console.log('-| account:', account)
+    //console.log('attachAccount')
+    //console.log('-| user:', user)
+    //console.log('-| account:', account)
     const providerResult = await fetch(this._userApiPrefix + '/provider/' + (user ? user.id : ''), {
       method: 'POST',
       headers: {
@@ -56,9 +58,10 @@ export function authMiddleware() {
   app.use(passport.session())
 
   app.use((req, res, next) => {
-    console.log('middleware:user', req.user)
-    if (req.user) {
+    console.log('middleware:user(check)', req.user)
+    if (false && req.user) {
       next()
+      return
     }
     const {cookies: {[authCookieName]: authCookie}} = req
     //console.log('middleware:authCookie', authCookie)
@@ -72,7 +75,7 @@ export function authMiddleware() {
         const {[authCookieName]: authCookie} = setCookieParser(response.headers.get('set-cookie'), {map: true})
         //console.log('middleware:response:', response.status, authCookie)
         if (authCookie) {
-          res.cookie(authCookieName, authCookie.value)
+          //res.cookie(authCookieName, authCookie.value)
         }
         switch (response.status) {
           case 200:
@@ -90,11 +93,15 @@ export function authMiddleware() {
             break
           case 401:
             // TODO: login redirect via api?
+            next()
             break
         }
       }).catch(err => {
+        console.error(err)
         res.status(500).send(err)
       })
+    } else {
+      next()
     }
     //res.status(401).send('')
   })
@@ -105,7 +112,7 @@ export default function Auth() {
   const userDb = new UserAPIWrapper(process.env.AUTH_USER_PREFIX)
   const passport = new Passport()
   passport.serializeUser((user, done) => {
-    console.log('serialzeUser', user)
+    //console.log('serialzeUser', user)
     done(null, user.id)
   })
   passport.deserializeUser((id, done) => {
@@ -118,39 +125,72 @@ export default function Auth() {
   const app = express()
 
   app.locals.title = 'authentication'
+  app.use('/assets', express.static(path.join(__dirname, 'assets')))
   app.use(bodyParser.urlencoded({ extended: false }))
   app.use(passport.initialize())
   app.use(passport.session())
+  app.use(touchSession())
 
   const successRedirect = ''
   const failureRedirect = 'login'
 
   async function resultHandler(req, res) {
-    const user = await userDb.attachAccount(req.user, req.account)
-    req.logIn(user, err => {
+    const {account, user, session} = req
+    const {name, accessToken, refreshToken} = account
+    console.log('provider result', {account})
+    const userAccess = session.userTokens || (session.userTokens = {})
+    const providerAccess = userAccess[name] || (userAccess[name] = {})
+    providerAccess.accessToken = accessToken
+    providerAccess.refreshToken = refreshToken
+    req.logIn(await userDb.attachAccount(user, account), err => {
       if (err) {
         res.send(err)
       } else {
-        const {session: {'auth:redirectTo': redirectTo}} = req
-        //console.log('login:resultHandler:redirectTo', redirectTo)
-        if (redirectTo) {
-          delete req.session['auth:redirectTo']
-          res.redirect(redirectTo)
-        } else {
-          res.send('auth resultHandler\n')
-        }
+        res.redirect(`${req.baseUrl}/../redirect_to`)
       }
     })
   }
 
   const providers = {
     //oauth2: OAuth2.build('oauth2', {passport, userDb}, resultHandler),
-    local: Local.build('local', {passport, userDb}, resultHandler),
-    nextcloud: Nextcloud.build('nextcloud', {passport, userDb}, resultHandler),
-    facebook: Facebook.build('facebook', {passport, userDb}, resultHandler),
+    //local: Local.build('local', {passport, userDb}),
+    nextcloud: Nextcloud.build('nextcloud', {passport, userDb}),
+    facebook: Facebook.build('facebook', {passport, userDb}),
   }
   Object.entries(providers).forEach(([name, subApp]) => {
-    app.use('/' + name, subApp)
+    app.use('/' + name, subApp, resultHandler)
+  })
+  app.get('/redirect_json', (req, res) => {
+    res.send(`
+<html>
+  <head>
+    <script type="text/javascript">
+      window.opener.postMessage("authProviderDone", "*");
+    </script>
+  </head>
+  <body>
+    <h1>Closing iframe</h1>
+  </body>
+</html>
+`)
+  })
+  app.get('/redirect_to', (req, res) => {
+    const {
+      session: {
+        'auth:redirectTo': redirectTo,
+        'auth:redirectJson': redirectJson,
+      },
+    } = req
+    //console.log('login:resultHandler:redirectTo', redirectTo)
+    if (redirectTo) {
+      delete req.session['auth:redirectTo']
+      res.redirect(redirectTo)
+    } else if (redirectJson) {
+      delete req.session['auth:redirectJson']
+      res.redirect(`${req.baseUrl}/redirect_json`)
+    } else {
+      res.send('auth resultHandler\n')
+    }
   })
   app.get('/', (req, res) => {
     console.log('auth root')
@@ -177,13 +217,56 @@ export default function Auth() {
     res.send(pageLines.join('') + debugLines.join(''))
   })
   app.get('/login', (req, res) => {
-    const {query: {redirect_to: redirectTo}} = req
     //console.log('login:redirectTo', redirectTo)
-    req.session['auth:redirectTo'] = redirectTo
-    const page = '<ul>' + Object.entries(providers).map(([name, subApp]) => {
-      return `<li><a href="${req.baseUrl}/${name}">${name}: ${subApp.locals.title}</a></li>`
-    }).join('') + '</ul>'
-    res.send(page)
+    const accepts = req.accepts(['text/html', 'application/json'])
+    if (accepts === 'application/json') {
+      req.session['auth:redirectJson'] = true
+      res.send(Object.entries(providers).map(([name, subApp]) => {
+        return {
+          name: name,
+          href: `${req.baseUrl}/${name}`,
+          title: subApp.locals.title,
+          logo: `${baseUrl(req)}/assets/${subApp.locals.logo}`,
+        }
+      }))
+    } else {
+      const {query: {redirect_to: redirectTo}} = req
+      req.session['auth:redirectTo'] = redirectTo
+      const page = '<ul>' + Object.entries(providers).map(([name, subApp]) => {
+        return `<li><a href="${req.baseUrl}/${name}">${name}: ${subApp.locals.title}</a></li>`
+      }).join('') + '</ul>'
+      res.send(page)
+    }
+  })
+  app.get('/logout', (req, res) => {
+    if (req.session) {
+      console.log('logout', req.session)
+      const {session: {cookie}} = req
+      res.clearCookie(process.env.AUTH_COOKIE_NAME, {
+        path: cookie.path,
+        domain: cookie.domain,
+        httpOnly: cookie.httpOnly,
+        secure: cookie.secure,
+      })
+      req.session.destroy(err => {
+        if (req.accepts('application/json')) {
+          res.send({})
+        } else {
+          res.send('')
+        }
+        res.status(200)
+      })
+    } else {
+      res.send('').status(200)
+    }
+  })
+  app.get('/user/roles', (req, res) => {
+    const {session: {user, userAccess}} = req
+    const roles = []
+    if (user && userAccess) {
+
+    }
+    
   })
   app.get('/user/me', (req, res) => {
     const {user} = req

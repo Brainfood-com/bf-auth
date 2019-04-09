@@ -4,7 +4,7 @@ import { Strategy as NextcloudStrategy } from '../passport-nextcloud'
 
 import fixOAuth2CallbackURL from './fixOAuth2CallbackURL'
 
-export function build(name, {passport, userDb}, resultHandler) {
+export function build(name, {passport, userDb}) {
   const nameUpper = name.toUpperCase()
   passport.use(name, new (fixOAuth2CallbackURL(NextcloudStrategy))({
     nextcloudBaseURL: process.env[`${nameUpper}_BASE_URL`],
@@ -12,18 +12,14 @@ export function build(name, {passport, userDb}, resultHandler) {
     clientSecret: process.env[`${nameUpper}_CLIENT_SECRET`],
     callbackURL: 'callback',
   }, (accessToken, refreshToken, params, profile, done) => {
-    //console.log('nextcloud check', {accessToken, refreshToken, params, profile, done})
-    return done(null, {name, id: profile.id, profile, accessToken, refreshToken})
-    //userDb.attachProvider(name, profile.id, profile).then(user => done(null, user)).catch(done)
+    return done(null, {name, profile, accessToken, refreshToken})
   }))
 
   const app = express()
   app.locals.provider = 'nextcloud'
   app.locals.title = 'Nextcloud'
-  app.use((req, res, next) => {
-    next()
-  })
+  app.locals.popup = {width: 500, height: 270}
   app.get('/', passport.authenticate(name))
-  app.get('/callback', passport.authorize(name), resultHandler)
+  app.get('/callback', passport.authorize(name))
   return app
 }

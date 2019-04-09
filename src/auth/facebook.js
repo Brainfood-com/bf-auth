@@ -1,9 +1,13 @@
 import express from 'express'
+import fetch from 'node-fetch'
 import { Strategy as FacebookStrategy } from 'passport-facebook'
 
 import fixOAuth2CallbackURL from './fixOAuth2CallbackURL'
 
-export function build(name, {passport, userDb}, resultHandler) {
+const fbVersion = 'v3.2'
+const graphBase = 'https://graph.facebook.com/' + fbVersion
+
+export function build(name, {passport, userDb}) {
   const nameUpper = name.toUpperCase()
   passport.use(name, new (fixOAuth2CallbackURL(FacebookStrategy))({
     clientID: process.env[`${nameUpper}_APP_ID`],
@@ -13,18 +17,42 @@ export function build(name, {passport, userDb}, resultHandler) {
     scope: ['public_profile', 'email'],
     profileFields: ['id', 'displayName', 'name', 'gender', 'birthday', 'profileUrl', 'emails', 'photos'],
   }, (accessToken, refreshToken, params, profile, done) => {
-    //console.log('facebook check', {accessToken, refreshToken, params, profile, done})
-    return done(null, {name, id: profile.id, profile, accessToken, refreshToken})
-    //userDb.attachProvider(name, profile.id, profile).then(user => done(null, user)).catch(done)
+    return done(null, {name, profile, accessToken, refreshToken})
   }))
 
   const app = express()
   app.locals.provider = 'facebook'
   app.locals.title = 'Facebook'
-  app.use((req, res, next) => {
-    next()
-  })
+  app.locals.logo = 'flogo_rgb_hex-brc-site-250.png'
+  app.locals.popup = {width: 500, height: 270}
   app.get('/', passport.authenticate(name, {authType: 'rerequest'}))
-  app.get('/callback', passport.authorize(name), resultHandler)
+  app.get('/callback', passport.authorize(name))
+  app.get('/permissions', async (req, res) => {
+    const {
+      session: {
+        userTokens: {
+          [name]: {accessToken, refreshToken},
+        } = {},
+      } = {},
+      user,
+    } = req
+    const {
+      providers: {
+        [name]: {id},
+      } = {},
+    } = user || {}
+    console.log('facebook permissions', id, accessToken)
+    if (accessToken && id) {
+      const permissions = await fetch(`${graphBase}/${id}/permissions?access_token=${accessToken}`).then(data => data.json())
+      //console.log('facebook permissions', permissions)
+      const result = {}
+      permissions.data.forEach(permission => {
+        result[permission.permission] = permission.status === 'granted'
+      })
+      res.status(200).send(result)
+    } else {
+      res.status(404).send('')
+    }
+  })
   return app
 }
