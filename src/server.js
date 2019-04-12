@@ -3,6 +3,8 @@ import express from 'express'
 import Http from 'http'
 import session from 'express-session'
 import SessionFileStore from 'session-file-store'
+import User from './user'
+import Auth from './auth'
 
 const app = express()
 app.use(cors({
@@ -23,6 +25,9 @@ app.use(session({
     path: process.env.AUTH_SESSION_PATH,
   })
 }))
+
+app.use('/user', User())
+app.use('/auth', Auth())
 
 const http = Http.Server(app)
 http.listen(8080, () => {
