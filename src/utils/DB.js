@@ -11,7 +11,7 @@ export async function readJson(fileName) {
     }
   } catch (e) {
     if (e.code === 'ENOENT') {
-      return null
+      return undefined
     }
     console.error(e)
     throw e
@@ -50,10 +50,12 @@ export default class DB {
 
   async nextSequence(name) {
     const fileName = this._dir + '/sequences.json'
-    const sequences = readJson(fileName).then(data => data || {})
+    const sequences = await readJson(fileName).then(data => data || {})
+    //console.log('nextSequence:before', sequences)
     const currentValue = sequences[name] || 0
     sequences[name] = currentValue + 1
-    writeJson(this._dir + '/sequences.json', sequences)
+    //console.log('nextSequence:after', sequences)
+    await writeJson(this._dir + '/sequences.json', sequences)
     return currentValue
   }
 

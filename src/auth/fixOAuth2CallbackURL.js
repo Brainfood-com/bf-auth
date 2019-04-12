@@ -10,8 +10,8 @@ export default function fixOAuth2CallbackURL(Class) {
         console.log('callbackURL', callbackURL)
         const parsed = url.parse(callbackURL)
         if (!parsed.protocol) {
-          callbackURL = url.resolve(req.originalUrl + '/', callbackURL)
-          console.log('resolved', req.originalUrl, callbackURL)
+          callbackURL = url.resolve(req.authSubAppOriginalUrl + '/', callbackURL)
+          console.log('resolved', req.originalUrl, req.authSubAppOriginalUrl, req.baseUrl, callbackURL)
         }
         return origAuthenticate.call(this, req, {...callOptions, callbackURL}, callback)
       }

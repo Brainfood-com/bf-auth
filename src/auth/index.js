@@ -24,18 +24,18 @@ class UserAPIWrapper {
     return fetch(this._userApiPrefix + '/user/' + userId).then(data => data.json())
   }
 
-  async attachAccount(user, account) {
-    //console.log('attachAccount')
+  async attachProfile(user, name, profile) {
+    //console.log('attachProfile')
     //console.log('-| user:', user)
-    //console.log('-| account:', account)
-    const providerResult = await fetch(this._userApiPrefix + '/provider/' + (user ? user.id : ''), {
+    //console.log('-| profile:', profile)
+    const profileResult = await fetch(this._userApiPrefix + '/profile/' + (user ? user.id : ''), {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
       },
-      body: JSON.stringify(account),
+      body: JSON.stringify({[name]: profile}),
     }).then(data => data.json())
-    return this.findById(providerResult.userId)
+    return this.findById(profileResult.userId)
   }
 }
 
@@ -134,19 +134,18 @@ export default function Auth() {
   const successRedirect = ''
   const failureRedirect = 'login'
 
-  async function resultHandler(req, res) {
+  async function resultHandler(name, baseUrl, req, res) {
     const {account, user, session} = req
-    const {name, accessToken, refreshToken} = account
-    console.log('provider result', {account})
-    const userAccess = session.userTokens || (session.userTokens = {})
-    const providerAccess = userAccess[name] || (userAccess[name] = {})
-    providerAccess.accessToken = accessToken
-    providerAccess.refreshToken = refreshToken
-    req.logIn(await userDb.attachAccount(user, account), err => {
+    const {profile, tokens} = account
+    console.log('profile result', {account})
+    const userTokens = session.userTokens || (session.userTokens = {})
+    userTokens[name] = tokens
+    req.logIn(await userDb.attachProfile(user, name, profile), err => {
       if (err) {
         res.send(err)
       } else {
-        res.redirect(`${req.baseUrl}/../redirect_to`)
+        console.log('after attach', baseUrl)
+        res.redirect(`${baseUrl}/../return`)
       }
     })
   }
@@ -158,14 +157,20 @@ export default function Auth() {
     facebook: Facebook.build('facebook', {passport, userDb}),
   }
   Object.entries(providers).forEach(([name, subApp]) => {
-    app.use('/' + name, subApp, resultHandler)
+    app.use('/' + name, (req, res, next) => {
+      req.authSubAppOriginalUrl = req.originalUrl
+      req.authBaseUrl = req.baseUrl
+      console.log('auth.originalUrl', req.authSubAppOriginalUrl)
+      console.log('auth.baseUrl', req.baseUrl)
+      next()
+    }, subApp, (req, res) => resultHandler(name, req.authBaseUrl, req, res))
   })
-  app.get('/redirect_json', (req, res) => {
+  function sendPostMessagePage(res, target) {
     res.send(`
 <html>
   <head>
     <script type="text/javascript">
-      window.opener.postMessage("authProviderDone", "*");
+      window.${target}.postMessage("authProviderDone", "*");
     </script>
   </head>
   <body>
@@ -173,23 +178,27 @@ export default function Auth() {
   </body>
 </html>
 `)
-  })
-  app.get('/redirect_to', (req, res) => {
-    const {
-      session: {
-        'auth:redirectTo': redirectTo,
-        'auth:redirectJson': redirectJson,
-      },
-    } = req
-    //console.log('login:resultHandler:redirectTo', redirectTo)
-    if (redirectTo) {
-      delete req.session['auth:redirectTo']
-      res.redirect(redirectTo)
-    } else if (redirectJson) {
-      delete req.session['auth:redirectJson']
-      res.redirect(`${req.baseUrl}/redirect_json`)
-    } else {
-      res.send('auth resultHandler\n')
+
+  }
+  app.get('/return/iframe', (req, res) => sendPostMessagePage(res, 'parent'))
+  app.get('/return/window', (req, res) => sendPostMessagePage(res, 'opener'))
+  app.get('/return', (req, res) => {
+    const {session} = req
+    const {auth: {target, redirectTo}} = session
+    delete session.auth
+    switch (target) {
+      case 'iframe':
+        res.redirect(`${req.baseUrl}/return/iframe`)
+        break
+      case 'window':
+        res.redirect(`${req.baseUrl}/return/window`)
+        break
+      case 'redirectTo':
+        res.redirect(redirectTo)
+        break
+      default:
+        res.redirect(req.baseUrl)
+        break
     }
   })
   app.get('/', (req, res) => {
@@ -219,8 +228,16 @@ export default function Auth() {
   app.get('/login', (req, res) => {
     //console.log('login:redirectTo', redirectTo)
     const accepts = req.accepts(['text/html', 'application/json'])
+    const {query: {target, redirectTo}} = req
+    if (target === 'iframe') {
+      req.session['auth'] = {target}
+    } else if (target === 'window') {
+      req.session['auth'] = {target}
+    } else if (redirectTo) {
+      req.session['auth'] = {target: 'redirect', redirectTo}
+    }
+
     if (accepts === 'application/json') {
-      req.session['auth:redirectJson'] = true
       res.send(Object.entries(providers).map(([name, subApp]) => {
         return {
           name: name,
@@ -230,8 +247,6 @@ export default function Auth() {
         }
       }))
     } else {
-      const {query: {redirect_to: redirectTo}} = req
-      req.session['auth:redirectTo'] = redirectTo
       const page = '<ul>' + Object.entries(providers).map(([name, subApp]) => {
         return `<li><a href="${req.baseUrl}/${name}">${name}: ${subApp.locals.title}</a></li>`
       }).join('') + '</ul>'
@@ -260,38 +275,44 @@ export default function Auth() {
       res.send('').status(200)
     }
   })
-  app.get('/user/roles', (req, res) => {
-    const {session: {user, userAccess}} = req
-    const roles = []
-    if (user && userAccess) {
 
-    }
-    
-  })
-  app.get('/user/me', (req, res) => {
-    const {user} = req
-    console.log('user/me', user)
+  async function getRoles(req, searchContext = {}) {
+    // TODO: implement cache?
+    const {session: {userTokens = {}}, user} = req
+    const {providers: searchProviders = []} = searchContext
+    console.log('getRoles', user)
     if (user) {
-      const me = {emails: {}}
-      Object.entries(user.providers).map(([providerName, providerProfile]) => {
-        const {displayName, emails, photos} = providerProfile
-        if (emails) {
-          emails.forEach(email => me.emails[email] = true)
-        }
-        if (!me.profilePic && photos) {
-          me.profilePic = photos[0].value
-        }
-        if (!me.displayName && displayName) {
-          me.displayName = displayName
-        }
-      })
-      me.emails = Object.keys(me.emails).sort()
-      console.log('me', me)
-      res.send(me)
-    } else {
-      res.status(404).send('')
+      if (searchProviders.length === 0) {
+        searchProviders.splice(0, 0, Object.keys(user.profiles))
+      }
+      console.log('-> searchProviders', searchProviders)
+      return await Promise.all(searchProviders.map(name => {
+        // TODO: implement request cache?
+        const {[name]: provider} = providers
+        const {profiles: {[name]: profile}} = user
+        const {[name]: tokens} = userTokens
+        return provider.locals.api.getPermissions(profile, tokens).then(permissions => [name, permissions])
+      })).then(providerPermisisons => providerPermisisons.reduce((result, providerPermission) => (result[providerPermission[0]] = providerPermission[1], result), {}))
+    }
+    return {}
+  }
+
+  async function hasRole(req, name, permission) {
+    //const [name, permission] = role.split(':', 2)
+    const providerRoles = await getRoles(req, {providers: [name]})
+    return providerRoles[permission]
+  }
+
+  app.get('/roles', async (req, res) => {
+    try {
+      const providerRoles = await getRoles(req)
+      res.send(providerRoles)
+    } catch (e) {
+      console.error(e)
+      res.status(500).send(e)
     }
   })
+
   app.get('/pac/:role?', (req, res) => {
     const {query: {role}, user} = req
     //console.log('PAC', role, user)

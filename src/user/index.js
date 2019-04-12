@@ -34,8 +34,8 @@ export default function User() {
     if (userId !== undefined) {
       const user = await database.getRow('users', userId)
       const me = {userId, emails: {}}
-      Object.entries(user.providers).map(([providerName, providerProfile]) => {
-        const {displayName, emails, photos} = providerProfile
+      Object.entries(user.profiles).map(([profileName, profile]) => {
+      const {displayName, emails, photos} = profile
         console.log('emails', emails)
         if (emails) {
           emails.forEach(email => me.emails[email.value] = true)
@@ -80,36 +80,69 @@ export default function User() {
     }
     res.send({}).status(404)
   })
-  app.post('/provider/:userId?', async (req, res) => {
+  app.post('/profile/:userId?', async (req, res) => {
     const {
-      body: account,
+      body: profiles,
       params: {userId},
     } = req
-    //console.log('POST:provider', userId, account)
-    const {name, id, profile} = account
-    const idByProvider = await database.getRow('providers', name).then(data => data || {})
+    console.log('POST:profile', userId, profiles)
 
-		const user = userId && await database.getRow('users', userId) || ({id: await database.nextSequence('userId'), providers: {}})
-    const existingProviderProfile = user.providers[name]
-    if (existingProviderProfile) {
-      const existingProviderId = idByProvider[existingProviderProfile.id]
-      if (existingProviderId !== user.id) {
-        const otherUser = await database.getRow('users', existingProviderId)
-        delete otherUser.providers[name]
-        await database.setRow('users', existingProviderId)
-        delete idByProvider[existingProviderProfile.id]
+    //console.log('profiles', profiles)
+    const providerToUserId = {}
+    const foundUserIds = {}
+    await Promise.all(Object.entries(profiles).map(async ([name, profile]) => {
+      const {id} = profile
+      const foundUserRow = await database.getRow(`provider:${name}`, id)
+      if (foundUserRow !== undefined) {
+        const {userId: foundUserId} = foundUserRow
+        providerToUserId[name] = foundUserId
+        foundUserIds[foundUserId] = true
       }
+    }))
+    console.log('-> providerToUserId', providerToUserId)
+    console.log('-> foundUserIds', foundUserIds)
+    const foundUserIdList = Object.keys(foundUserIds)
+    let targetUserId
+    if (userId === undefined) {
+      switch (foundUserIdList.length) {
+        case 0:
+          break
+        case 1:
+          targetUserId = foundUserIdList[0]
+          break
+        default:
+          throw new Error('overlapping profiles')
+      }
+    } else {
+      targetUserId = userId
     }
-    user.providers[name] = profile
-    idByProvider[id] = user.id
-    console.log('-| result:', user)
-    await database.setRow('providers', name, idByProvider)
+    console.log('-> targetUserId', targetUserId)
+		const user = targetUserId && await database.getRow('users', targetUserId) || ({id: await database.nextSequence('userId'), profiles: {}})
+    console.log('-> user', user)
+    await Promise.all(Object.entries(profiles).map(async ([name, profile]) => {
+      const {id} = profile
+      const foundUserId = providerToUserId[name]
+      if (foundUserId !== undefined) {
+        if (foundUserId !== user.id) {
+          // move the profile from the other user to this user
+          const otherUser = await database.getRow('users', foundUserId)
+          console.log('-> otherUser', otherUser)
+          delete otherUser.profiles[name]
+          await database.setRow('users', foundUserId, otherUser)
+          await database.setRow(`provider:${name}`, id, {userId: user.id})
+        }
+      } else {
+        // no mapping for this provider, connect it
+        await database.setRow(`provider:${name}`, id, {userId: user.id})
+      }
+      user.profiles[name] = profile
+    }))
     await database.setRow('users', user.id, user)
     res.send({userId: user.id})
   })
   /*
-  app.delete('/provider/:id/:providerName', (req, res) => {
-    console.log('DELETE:provider', req.params.id, req.params.providerName)
+  app.delete('/profile/:id/:profileName', (req, res) => {
+    console.log('DELETE:profile', req.params.id, req.params.profileName)
     res.status(500)
   })
   */

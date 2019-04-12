@@ -12,7 +12,7 @@ export function build(name, {passport, userDb}) {
     clientSecret: process.env[`${nameUpper}_CLIENT_SECRET`],
     callbackURL: 'callback',
   }, (accessToken, refreshToken, params, profile, done) => {
-    return done(null, {name, profile, accessToken, refreshToken})
+    return done(null, {profile, tokens: {accessToken, refreshToken}})
   }))
 
   const app = express()
@@ -21,5 +21,10 @@ export function build(name, {passport, userDb}) {
   app.locals.popup = {width: 500, height: 270}
   app.get('/', passport.authenticate(name))
   app.get('/callback', passport.authorize(name))
+  app.locals.api = {
+    async getPermissions(profile, tokens) {
+      return null
+    },
+  }
   return app
 }

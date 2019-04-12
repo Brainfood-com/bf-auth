@@ -17,7 +17,7 @@ export function build(name, {passport, userDb}) {
     scope: ['public_profile', 'email'],
     profileFields: ['id', 'displayName', 'name', 'gender', 'birthday', 'profileUrl', 'emails', 'photos'],
   }, (accessToken, refreshToken, params, profile, done) => {
-    return done(null, {name, profile, accessToken, refreshToken})
+    return done(null, {profile, tokens: {accessToken, refreshToken}})
   }))
 
   const app = express()
@@ -25,34 +25,25 @@ export function build(name, {passport, userDb}) {
   app.locals.title = 'Facebook'
   app.locals.logo = 'flogo_rgb_hex-brc-site-250.png'
   app.locals.popup = {width: 500, height: 270}
-  app.get('/', passport.authenticate(name, {authType: 'rerequest'}))
+  app.get('/', passport.authorize(name, {authType: 'rerequest'}))
   app.get('/callback', passport.authorize(name))
-  app.get('/permissions', async (req, res) => {
-    const {
-      session: {
-        userTokens: {
-          [name]: {accessToken, refreshToken},
-        } = {},
-      } = {},
-      user,
-    } = req
-    const {
-      providers: {
-        [name]: {id},
-      } = {},
-    } = user || {}
-    console.log('facebook permissions', id, accessToken)
-    if (accessToken && id) {
-      const permissions = await fetch(`${graphBase}/${id}/permissions?access_token=${accessToken}`).then(data => data.json())
-      //console.log('facebook permissions', permissions)
-      const result = {}
-      permissions.data.forEach(permission => {
-        result[permission.permission] = permission.status === 'granted'
-      })
-      res.status(200).send(result)
-    } else {
-      res.status(404).send('')
-    }
-  })
+  app.locals.api = {
+    async getPermissions(profile, tokens) {
+      const {accessToken, refreshToken} = tokens
+      const {id} = profile
+      console.log('facebook permissions', id, accessToken)
+      if (accessToken && id) {
+        const permissions = await fetch(`${graphBase}/${id}/permissions?access_token=${accessToken}`).then(data => data.json())
+        //console.log('facebook permissions', permissions)
+        const result = {}
+        permissions.data.forEach(permission => {
+          result[permission.permission] = permission.status === 'granted'
+        })
+        return result
+      } else {
+        return null
+      }
+    },
+  }
   return app
 }
