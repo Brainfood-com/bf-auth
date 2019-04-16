@@ -15,30 +15,6 @@ import * as OAuth2 from './oauth2'
 import * as Facebook from './facebook'
 import * as Nextcloud from './nextcloud'
 
-class UserAPIWrapper {
-  constructor(userApiPrefix) {
-    this._userApiPrefix = userApiPrefix
-  }
-
-  async findById(userId) {
-    return fetch(this._userApiPrefix + '/user/' + userId).then(data => data.json())
-  }
-
-  async attachProfile(user, name, profile) {
-    //console.log('attachProfile')
-    //console.log('-| user:', user)
-    //console.log('-| profile:', profile)
-    const profileResult = await fetch(this._userApiPrefix + '/profile/' + (user ? user.id : ''), {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({[name]: profile}),
-    }).then(data => data.json())
-    return this.findById(profileResult.userId)
-  }
-}
-
 export function authMiddleware() {
   const authServerPrefix = 'http://localhost:8080/auth'
   const authCookieName = process.env.AUTH_COOKIE_NAME
@@ -108,19 +84,18 @@ export function authMiddleware() {
   return app
 }
 
-export default function Auth() {
-  const userDb = new UserAPIWrapper(process.env.AUTH_USER_PREFIX)
+
+export default function Auth(config) {
+  //const userDb = new UserAPIWrapper(process.env.AUTH_USER_PREFIX)
+  const {userDb} = config
   const passport = new Passport()
   passport.serializeUser((user, done) => {
-    //console.log('serialzeUser', user)
-    done(null, user.id)
+    console.log('serialzeUser', user)
+    done(null, user)
   })
-  passport.deserializeUser((id, done) => {
-    //console.log('deserialzeUser', id)
-    userDb.findById(id).then(user => {
-      //console.log('got user', user)
-      return done(null, user)
-    }).catch(done)
+  passport.deserializeUser((userToken, done) => {
+    console.log('deserialzeUser', userToken)
+    return done(null, userToken)
   })
   const app = express()
 
@@ -140,8 +115,9 @@ export default function Auth() {
     console.log('profile result', {account})
     const userTokens = session.userTokens || (session.userTokens = {})
     userTokens[name] = tokens
-    req.logIn(await userDb.attachProfile(user, name, profile), err => {
+    req.logIn(await userDb.attachAccount(user, {[name]: profile}), err => {
       if (err) {
+        console.error(err)
         res.send(err)
       } else {
         console.log('after attach', baseUrl)
@@ -153,8 +129,8 @@ export default function Auth() {
   const providers = {
     //oauth2: OAuth2.build('oauth2', {passport, userDb}, resultHandler),
     //local: Local.build('local', {passport, userDb}),
-    nextcloud: Nextcloud.build('nextcloud', {passport, userDb}),
-    facebook: Facebook.build('facebook', {passport, userDb}),
+    nextcloud: Nextcloud.build('nextcloud', {passport}),
+    facebook: Facebook.build('facebook', {passport}),
   }
   Object.entries(providers).forEach(([name, subApp]) => {
     app.use('/' + name, (req, res, next) => {
@@ -331,5 +307,20 @@ export default function Auth() {
       res.redirect(401, `${baseUrl(req)}/login`)
     }
   })
-  return app
+   app.get('/me', async (req, res) => {
+    const {user: userToken} = req
+    console.log('user:/me', userToken)
+    const me = await userDb.me(userToken)
+    if (me) {
+      res.send(me)
+    } else {
+      res.status(404)
+      if (req.accepts('application/json')) {
+        res.send({})
+      } else {
+        res.send('')
+      }
+    }
+  })
+ return app
 }

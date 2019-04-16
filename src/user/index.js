@@ -1,20 +1,10 @@
 import express from 'express'
 import bodyParser from 'body-parser'
-import fse from 'fs-extra'
-import path from 'path'
 
 import {authMiddleware} from '../auth'
-import DB from '../utils/DB'
 import touchSession from '../touchSession'
 
-async function writeOneFile(targetName, fileContents) {
-  console.log('writeOneFile', targetName, fileContents)
-  const targetBaseName = path.basename(targetName)
-  const targetDirName = path.dirname(targetName)
-  await fse.mkdirs(targetDirName)
-  await fse.writeFile(`${targetDirName}/${targetBaseName}.tmp`, fileContents)
-  await fse.rename(`${targetDirName}/${targetBaseName}.tmp`, targetName)
-}
+import JSONFileDB from './JSONFileDB'
 
 export default function User() {
   const path = process.env.USER_STORE_PATH
@@ -26,29 +16,15 @@ export default function User() {
   app.use(bodyParser.urlencoded({ extended: false }))
   app.use(touchSession())
 
-  const database = new DB(path)
 
-  app.get('/me', authMiddleware(), async (req, res) => {
-    const {user: {userId} = {}} = req
-    console.log('user:/me', userId)
-    if (userId !== undefined) {
-      const user = await database.getRow('users', userId)
-      const me = {userId, emails: {}}
-      Object.entries(user.profiles).map(([profileName, profile]) => {
-      const {displayName, emails, photos} = profile
-        console.log('emails', emails)
-        if (emails) {
-          emails.forEach(email => me.emails[email.value] = true)
-        }
-        if (!me.profilePic && photos) {
-          me.profilePic = photos[0].value
-        }
-        if (!me.displayName && displayName) {
-          me.displayName = displayName
-        }
-      })
-      me.emails = Object.keys(me.emails).sort()
-      console.log('me', me)
+  const database = new JSONFileDB({path, fileExtension})
+  app.locals.database = database
+
+  app.get('/me', async (req, res) => {
+    const {user: userToken} = req
+    console.log('user:/me', userToken)
+    const me = await database.me(userToken)
+    if (me) {
       res.send(me)
     } else {
       res.status(404)
@@ -60,18 +36,12 @@ export default function User() {
     }
   })
 
+  if (false) {
   app.get('/user/:userId', async (req, res) => {
     const {params: {userId}} = req
     //console.log('GET:user', userId)
     res.send(await database.getRow('users', userId))
   })
-  /*
-  app.post('/user/:id', (req, res) => {
-    console.log('POST:user', req.params.id, req.body)
-    res.status(500)
-    res.send('foo')
-  })
-  */
   app.post('/user', async (req, res) => {
     const {username, password} = req.body
     const userLogin = await database.getRow('user-login', username)
@@ -146,6 +116,6 @@ export default function User() {
     res.status(500)
   })
   */
-
+  }
   return app
 }

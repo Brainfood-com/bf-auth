@@ -6,8 +6,8 @@ import bodyParser from 'body-parser'
 import session from 'express-session'
 import SessionFileStore from 'session-file-store'
 
-import User from './user'
 import Auth from './auth'
+import JSONFileDB from './user/JSONFileDB'
 
 const app = express()
 app.use(cors({
@@ -33,12 +33,15 @@ app.use(session({
 
 // --
 
-app.use('/user', User())
+const userDb = new JSONFileDB({
+  path: process.env.USER_STORE_PATH,
+  fileExtension: process.env.USER_STORE_EXTENSION,
+})
 
 // /user/users?id=${id}
 // /user/users/
 
-app.use('/auth', Auth())
+app.use('/auth', Auth({userDb}))
 
 // --
 
