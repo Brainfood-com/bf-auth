@@ -10,6 +10,7 @@ import { Authenticator as Passport } from 'passport'
 
 import {baseUrl} from '../utils'
 import touchSession from '../touchSession'
+import * as Email from './email'
 import * as Local from './local'
 import * as OAuth2 from './oauth2'
 import * as Facebook from './facebook'
@@ -21,11 +22,11 @@ export function authMiddleware() {
   const passport = new Passport()
   passport.serializeUser((user, done) => {
     console.log('serialzeUser', user)
-    done(null, user.userId)
+    done(null, user)
   })
-  passport.deserializeUser((id, done) => {
-    //console.log('deserialzeUser', id)
-    return done(null, {userId: id})
+  passport.deserializeUser((userToken, done) => {
+    //console.log('deserialzeUser', userToken)
+    return done(null, userToken)
   })
   const app = express()
   app.use(cookieParser())
@@ -110,11 +111,16 @@ export default function Auth(config) {
   const failureRedirect = 'login'
 
   async function resultHandler(name, baseUrl, req, res) {
-    const {account, user, session} = req
-    const {profile, tokens} = account
+    let {account, user, session} = req
+    let {hash, profile, tokens} = account
     console.log('profile result', {account})
     const userTokens = session.userTokens || (session.userTokens = {})
     userTokens[name] = tokens
+    if (hash) {
+      const result = await userDb.verifyHash(hash)
+      user = result.user
+      profile = result.profile
+    }
     req.logIn(await userDb.attachAccount(user, {[name]: profile}), err => {
       if (err) {
         console.error(err)
@@ -131,6 +137,7 @@ export default function Auth(config) {
     //local: Local.build('local', {passport, userDb}),
     nextcloud: Nextcloud.build('nextcloud', {passport}),
     facebook: Facebook.build('facebook', {passport}),
+    email: Email.build('email', {passport, userDb}),
   }
   Object.entries(providers).forEach(([name, subApp]) => {
     app.use('/' + name, (req, res, next) => {

@@ -16,4 +16,12 @@ export default class AbstractUserDB {
   async attachAccount(userToken, profiles) {
     throw new Error('Unsupported')
   }
+
+  async emailRequest(userToken, emailAddress) {
+    throw new Error('Unsupported')
+  }
+
+  async attachHash(userToken, hash) {
+    throw new Error('Unsupported')
+  }
 }

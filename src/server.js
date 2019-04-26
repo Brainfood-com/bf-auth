@@ -8,6 +8,7 @@ import SessionFileStore from 'session-file-store'
 
 import Auth from './auth'
 import JSONFileDB from './user/JSONFileDB'
+import MoquiDB from './user/MoquiDB'
 
 const app = express()
 app.use(cors({
@@ -33,7 +34,7 @@ app.use(session({
 
 // --
 
-const userDb = new JSONFileDB({
+const userDb = MoquiDB({
   path: process.env.USER_STORE_PATH,
   fileExtension: process.env.USER_STORE_EXTENSION,
 })

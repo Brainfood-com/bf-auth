@@ -14,7 +14,7 @@ export function build(name, {passport, userDb}) {
     clientSecret: process.env[`${nameUpper}_APP_SECRET`],
     callbackURL: 'callback',
     proxy: true,
-    scope: ['public_profile', 'email'],
+    scope: ['public_profile', 'email', 'user_gender'],
     profileFields: ['id', 'displayName', 'name', 'gender', 'birthday', 'profileUrl', 'emails', 'photos'],
   }, (accessToken, refreshToken, params, profile, done) => {
     return done(null, {profile, tokens: {accessToken, refreshToken}})
