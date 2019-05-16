@@ -135,7 +135,7 @@ export default function Auth(config) {
   const providers = {
     //oauth2: OAuth2.build('oauth2', {passport, userDb}, resultHandler),
     //local: Local.build('local', {passport, userDb}),
-    nextcloud: Nextcloud.build('nextcloud', {passport}),
+    //nextcloud: Nextcloud.build('nextcloud', {passport}),
     facebook: Facebook.build('facebook', {passport}),
     email: Email.build('email', {passport, userDb}),
   }
