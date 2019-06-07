@@ -269,7 +269,7 @@ export default function Auth(config) {
     console.log('getRoles', userToken)
     if (user) {
       if (searchProviders.length === 0) {
-        searchProviders.splice(0, 0, Object.keys(user.profiles))
+        throw searchProviders.splice(0, 0, Object.keys(user.profiles))
       }
       console.log('-> searchProviders', searchProviders)
       return await Promise.all(searchProviders.map(async name => {
@@ -307,6 +307,7 @@ export default function Auth(config) {
         res.status(500)
       } else {
         res.status(200)
+        res.header('X-Auth-User', user.partyId)
         res.send({
           userId: user.id,
           roles: [],

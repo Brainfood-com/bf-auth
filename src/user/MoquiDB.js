@@ -14,6 +14,7 @@ function buildMoquiFetch({moquiPrefix, moquiAuthUsername, moquiAuthPassword}) {
   }
   const basicAuth = moquiAuthUsername + ':' + moquiAuthPassword
   const authorization = 'Basic ' + Buffer.from(basicAuth).toString('base64')
+  console.log('moqui auth', basicAuth, authorization)
   return async (apiPath, {headers = {}, ...options} = {}) => {
     const fetchOptions = {
       ...options,
@@ -24,6 +25,7 @@ function buildMoquiFetch({moquiPrefix, moquiAuthUsername, moquiAuthPassword}) {
         moquiSessionToken: 'foobar', //await getSessionToken(),
       }
     }
+    console.log('apiPath', apiPath)
     console.log('fetchOptions', fetchOptions)
     return fetch(`${moquiPrefix}/rest/s1${apiPath}`, fetchOptions)
   }
@@ -68,12 +70,14 @@ export default function MoquiDB(config) {
 
     async attachAccount(userToken, providers) {
       const {partyId} = userToken || {}
+      console.log('providers', providers)
       const result = await moquiFetch(`/bf-auth/account/${partyId === undefined ? '' : partyId}`, {
         method: partyId === undefined ? 'POST' : 'PUT',
         headers: {
           'content-type': 'application/json',
         },
         body: JSON.stringify({
+          partyId: partyId,
           providers: Object.entries(providers).map(([name, {profile, token}]) => ({name, profile, token})),
         }),
       }).then(response => response.json())

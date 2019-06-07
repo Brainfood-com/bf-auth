@@ -116,6 +116,7 @@ export default function JSONFileDB(config) {
     }
   }
 
+
   return new JSONFileDB()
 }
 
