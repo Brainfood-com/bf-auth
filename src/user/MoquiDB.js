@@ -68,8 +68,8 @@ export default function MoquiDB(config) {
 
     async attachAccount(userToken, profiles) {
       const {partyId} = userToken || {}
-      const result = await moquiFetch(`/bf-auth/attachAccount${partyId !== undefined ? '/' + partyId : ''}`, {
-        method: 'POST',
+      const result = await moquiFetch(`/bf-auth/account/${partyId === undefined ? '' : partyId}`, {
+        method: partyId === undefined ? 'POST' : 'PUT',
         headers: {
           'content-type': 'application/json',
         },
