@@ -121,7 +121,7 @@ export default function Auth(config) {
       user = result.user
       profile = result.profile
     }
-    req.logIn(await userDb.attachAccount(user, {[name]: profile}), err => {
+    req.logIn(await userDb.attachAccount(user, {[name]: {profile}}), err => {
       if (err) {
         console.error(err)
         res.send(err)
