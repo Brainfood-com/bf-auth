@@ -44,12 +44,12 @@ export default function JSONFileDB(config) {
       return database.getRow('users', userId)
     }
 
-    async attachAccount(userToken, profiles) {
-      console.log('attachAccount', userToken, profiles)
+    async attachAccount(userToken, providers) {
+      console.log('attachAccount', userToken, providers)
 
       const providerToUserId = {}
       const foundUserIds = {}
-      await Promise.all(Object.entries(profiles).map(async ([name, profile]) => {
+      await Promise.all(Object.entries(providers).map(async ([name, profile]) => {
         const {id} = profile
         const foundUserRow = await database.getRow(`provider:${name}`, id)
         if (foundUserRow !== undefined) {
@@ -78,7 +78,7 @@ export default function JSONFileDB(config) {
       console.log('-> targetUserId', targetUserId)
       const user = targetUserId && await database.getRow('users', targetUserId) || ({id: await database.nextSequence('userId'), profiles: {}})
       console.log('-> user', user)
-      await Promise.all(Object.entries(profiles).map(async ([name, profile]) => {
+      await Promise.all(Object.entries(providers).map(async ([name, profile]) => {
         const {id} = profile
         const foundUserId = providerToUserId[name]
         if (foundUserId !== undefined) {

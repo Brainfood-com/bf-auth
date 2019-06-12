@@ -13,7 +13,7 @@ export default class AbstractUserDB {
   // attaches a new account to the current user, or auto-creates a new one
   // returns opaque user token on success
   // null/undefined on error
-  async attachAccount(userToken, profiles) {
+  async attachAccount(userToken, providers) {
     throw new Error('Unsupported')
   }
 

@@ -66,7 +66,7 @@ export default function MoquiDB(config) {
       return database.getRow('users', userId)
     }
 
-    async attachAccount(userToken, profiles) {
+    async attachAccount(userToken, providers) {
       const {partyId} = userToken || {}
       const result = await moquiFetch(`/bf-auth/account/${partyId === undefined ? '' : partyId}`, {
         method: partyId === undefined ? 'POST' : 'PUT',
@@ -74,7 +74,7 @@ export default function MoquiDB(config) {
           'content-type': 'application/json',
         },
         body: JSON.stringify({
-          profiles: Object.entries(profiles).map(([name, profile]) => ({name, profile})),
+          providers: Object.entries(providers).map(([name, profile]) => ({name, profile})),
         }),
       }).then(response => response.json())
       console.log('result', result)
