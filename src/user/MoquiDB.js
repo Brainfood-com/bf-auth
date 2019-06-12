@@ -32,7 +32,7 @@ export default function MoquiDB(config) {
   // moquiPrefix
   //const {path, fileExtension} = config
 
-  const moquiPrefix = 'http://moqui:8080'
+  const moquiPrefix = process.env.MOQUI_PREFIX
   //const database = new DB(path)
 
   const moquiFetch = buildMoquiFetch({moquiPrefix})
