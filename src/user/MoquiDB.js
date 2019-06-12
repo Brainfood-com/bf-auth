@@ -74,11 +74,23 @@ export default function MoquiDB(config) {
           'content-type': 'application/json',
         },
         body: JSON.stringify({
-          providers: Object.entries(providers).map(([name, {profile}]) => ({name, profile})),
+          providers: Object.entries(providers).map(([name, {profile, token}]) => ({name, profile, token})),
         }),
       }).then(response => response.json())
       console.log('result', result)
       return {partyId: result.partyId}
+    }
+
+    async getProviderProfile(userToken, providerName) {
+      const {partyId} = userToken || {}
+      const result = await moquiFetch(`/bf-auth/account/${partyId}/${providerName}`).then(response => response.json())
+      return result.providerProfile
+    }
+
+    async getToken(userToken, name) {
+      const {partyId} = userToken || {}
+      const result = await moquiFetch(`/bf-auth/tokens/${partyId}/${name}`).then(response => response.json())
+      return result.token
     }
 
     async verifyHash(hash) {

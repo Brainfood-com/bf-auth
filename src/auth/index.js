@@ -112,16 +112,14 @@ export default function Auth(config) {
 
   async function resultHandler(name, baseUrl, req, res) {
     let {account, user, session} = req
-    let {hash, profile, tokens} = account
+    let {hash, profile, token} = account
     console.log('profile result', {account})
-    const userTokens = session.userTokens || (session.userTokens = {})
-    userTokens[name] = tokens
     if (hash) {
       const result = await userDb.verifyHash(hash)
       user = result.user
       profile = result.profile
     }
-    req.logIn(await userDb.attachAccount(user, {[name]: {profile}}), err => {
+    req.logIn(await userDb.attachAccount(user, {[name]: {profile, token}}), err => {
       if (err) {
         console.error(err)
         res.send(err)
@@ -208,6 +206,11 @@ export default function Auth(config) {
     debugLines.push('</pre>\n')
     res.send(pageLines.join('') + debugLines.join(''))
   })
+  app.get('/token/:name', async (req, res) => {
+    const {params: {name}, user: userToken} = req
+    const token = await userDb.getToken(userToken, name)
+    res.send({token})
+  })
   app.get('/login', (req, res) => {
     //console.log('login:redirectTo', redirectTo)
     const accepts = req.accepts(['text/html', 'application/json'])
@@ -261,20 +264,19 @@ export default function Auth(config) {
 
   async function getRoles(req, searchContext = {}) {
     // TODO: implement cache?
-    const {session: {userTokens = {}}, user} = req
+    const {user: userToken} = req
     const {providers: searchProviders = []} = searchContext
-    console.log('getRoles', user)
+    console.log('getRoles', userToken)
     if (user) {
       if (searchProviders.length === 0) {
         searchProviders.splice(0, 0, Object.keys(user.profiles))
       }
       console.log('-> searchProviders', searchProviders)
-      return await Promise.all(searchProviders.map(name => {
+      return await Promise.all(searchProviders.map(async name => {
         // TODO: implement request cache?
-        const {[name]: provider} = providers
-        const {profiles: {[name]: profile}} = user
-        const {[name]: tokens} = userTokens
-        return provider.locals.api.getPermissions(profile, tokens).then(permissions => [name, permissions])
+        const profile = await userDb.getProviderProfile(userToken, name)
+        const token = await userDb.getProviderToken(userToken, name)
+        return provider.locals.api.getPermissions(profile, token).then(permissions => [name, permissions])
       })).then(providerPermisisons => providerPermisisons.reduce((result, providerPermission) => (result[providerPermission[0]] = providerPermission[1], result), {}))
     }
     return {}

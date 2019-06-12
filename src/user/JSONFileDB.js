@@ -78,7 +78,7 @@ export default function JSONFileDB(config) {
       console.log('-> targetUserId', targetUserId)
       const user = targetUserId && await database.getRow('users', targetUserId) || ({id: await database.nextSequence('userId'), profiles: {}})
       console.log('-> user', user)
-      await Promise.all(Object.entries(providers).map(async ([name, {profile}]) => {
+      await Promise.all(Object.entries(providers).map(async ([name, {profile, token}]) => {
         const {id} = profile
         const foundUserId = providerToUserId[name]
         if (foundUserId !== undefined) {
@@ -87,6 +87,7 @@ export default function JSONFileDB(config) {
             const otherUser = await database.getRow('users', foundUserId)
             console.log('-> otherUser', otherUser)
             delete otherUser.profiles[name]
+            delete otherUser.tokens[name]
             await database.setRow('users', foundUserId, otherUser)
             await database.setRow(`provider:${name}`, id, {userId: user.id})
           }
@@ -95,10 +96,23 @@ export default function JSONFileDB(config) {
           await database.setRow(`provider:${name}`, id, {userId: user.id})
         }
         user.profiles[name] = profile
+        user.tokens[name] = token
       }))
       await database.setRow('users', user.id, user)
       console.log('-> final user', user)
       return {userId: user.id}
+    }
+
+    async getProviderProfile(userToken, providerName) {
+      const {userId} = userToken
+      const user = await database.getRow('users', userId)
+      return (user.profiles || {})[providerName]
+    }
+
+    async getProviderToken(userToken, providerName) {
+      const {userId} = userToken
+      const user = await database.getRow('users', userId)
+      return (user.tokens || {})[providerName]
     }
   }
 

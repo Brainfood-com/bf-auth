@@ -17,6 +17,14 @@ export default class AbstractUserDB {
     throw new Error('Unsupported')
   }
 
+  async getProviderProfile(userToken, providerName) {
+    throw new Error('Unsupported')
+  }
+
+  async getToken(userToken, name) {
+    throw new Error('Unsupported')
+  }
+
   async emailRequest(userToken, emailAddress) {
     throw new Error('Unsupported')
   }

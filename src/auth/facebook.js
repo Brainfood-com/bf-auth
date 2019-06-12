@@ -17,7 +17,7 @@ export function build(name, {passport, userDb}) {
     scope: ['public_profile', 'email', 'user_gender'],
     profileFields: ['id', 'displayName', 'name', 'gender', 'birthday', 'profileUrl', 'emails', 'photos'],
   }, (accessToken, refreshToken, params, profile, done) => {
-    return done(null, {profile, tokens: {accessToken, refreshToken}})
+    return done(null, {profile, token: {accessToken, refreshToken}})
   }))
 
   const app = express()
