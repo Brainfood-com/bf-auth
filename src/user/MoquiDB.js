@@ -4,7 +4,7 @@ import fetch from 'node-fetch'
 
 import AbstractUserDB from './AbstractUserDB'
 
-function buildMoquiFetch({moquiPrefix}) {
+function buildMoquiFetch({moquiPrefix, moquiAuthUsername, moquiAuthPassword}) {
   let moquiSessionToken
   function getSessionToken() {
     if (!moquiSessionToken) {
@@ -12,12 +12,15 @@ function buildMoquiFetch({moquiPrefix}) {
     }
     return moquiSessionToken
   }
+  const basicAuth = moquiAuthUsername + ':' + moquiAuthPassword
+  const authorization = 'Basic ' + Buffer.from(basicAuth).toString('base64')
   return async (apiPath, {headers = {}, ...options} = {}) => {
     const fetchOptions = {
       ...options,
       credentials: true,
       headers: {
         ...headers,
+        authorization,
         moquiSessionToken: 'foobar', //await getSessionToken(),
       }
     }
@@ -33,9 +36,11 @@ export default function MoquiDB(config) {
   //const {path, fileExtension} = config
 
   const moquiPrefix = process.env.MOQUI_PREFIX
+  const moquiAuthUsername = process.env.MOQUI_AUTH_USERNAME
+  const moquiAuthPassword = process.env.MOQUI_AUTH_PASSWORD
   //const database = new DB(path)
 
-  const moquiFetch = buildMoquiFetch({moquiPrefix})
+  const moquiFetch = buildMoquiFetch({moquiPrefix, moquiAuthUsername, moquiAuthPassword})
 
   const defaultUserToken = {partyId: 1234}
   class MoquiDB extends AbstractUserDB {
