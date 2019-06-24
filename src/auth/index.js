@@ -139,6 +139,14 @@ export default function Auth(config) {
   }
   Object.entries(providers).forEach(([name, subApp]) => {
     app.use('/' + name, (req, res, next) => {
+      const {query: {authView}} = req
+      if (authView) {
+        const auth = req.session.auth || {}
+        auth.authView = authView
+        req.session.auth = auth
+        res.redirect(307, req.baseUrl)
+        return
+      }
       req.authSubAppOriginalUrl = req.originalUrl
       req.authBaseUrl = req.baseUrl
       console.log('auth.originalUrl', req.authSubAppOriginalUrl)
@@ -146,12 +154,12 @@ export default function Auth(config) {
       next()
     }, subApp, (req, res) => resultHandler(name, req.authBaseUrl, req, res))
   })
-  function sendPostMessagePage(res, target) {
+  function sendPostMessagePage(res, target, redirectTo) {
     res.send(`
 <html>
   <head>
     <script type="text/javascript">
-      window.${target}.postMessage("authProviderDone", "*");
+      window.${target}.postMessage({type: "authProviderDone", redirectTo: ${JSON.stringify(redirectTo)}}, "*");
     </script>
   </head>
   <body>
@@ -161,24 +169,25 @@ export default function Auth(config) {
 `)
 
   }
-  app.get('/return/iframe', (req, res) => sendPostMessagePage(res, 'parent'))
-  app.get('/return/window', (req, res) => sendPostMessagePage(res, 'opener'))
+  app.get('/return/iframe', (req, res) => sendPostMessagePage(req, res, 'parent'))
+  app.get('/return/window', (req, res) => sendPostMessagePage(req, res, 'opener'))
   app.get('/return', (req, res) => {
     const {session} = req
-    const {auth: {target, redirectTo}} = session
+    const {auth: {authView, redirectTo}} = session
     delete session.auth
-    switch (target) {
+    switch (authView) {
       case 'iframe':
-        res.redirect(`${req.baseUrl}/return/iframe`)
+        sendPostMessagePage(res, 'parent', redirectTo)
         break
       case 'window':
-        res.redirect(`${req.baseUrl}/return/window`)
-        break
-      case 'redirectTo':
-        res.redirect(redirectTo)
+        sendPostMessagePage(res, 'opener', redirectTo)
         break
       default:
-        res.redirect(req.baseUrl)
+        if (redirectTo) {
+          res.redirect(redirectTo)
+        } else {
+          res.redirect(req.baseUrl)
+        }
         break
     }
   })
@@ -214,30 +223,31 @@ export default function Auth(config) {
   app.get('/login', (req, res) => {
     //console.log('login:redirectTo', redirectTo)
     const accepts = req.accepts(['text/html', 'application/json'])
-    const {query: {target, redirectTo}} = req
-    if (target === 'iframe') {
-      req.session['auth'] = {target}
-    } else if (target === 'window') {
-      req.session['auth'] = {target}
-    } else if (redirectTo) {
-      req.session['auth'] = {target: 'redirect', redirectTo}
+    const {query: {redirectTo}} = req
+    const {session: {auth = {}}} = req
+    if (redirectTo) {
+      auth.redirectTo = redirectTo
     }
+    req.session.auth = auth
 
-    if (accepts === 'application/json') {
-      res.send(Object.entries(providers).map(([name, subApp]) => {
-        return {
-          name: name,
-          href: `${req.baseUrl}/${name}`,
-          title: subApp.locals.title,
-          logo: `${baseUrl(req)}/assets/${subApp.locals.logo}`,
-        }
-      }))
+    if (process.env.AUTH_LOGIN_LOCATION) {
+      res.redirect(307, process.env.AUTH_LOGIN_LOCATION)
     } else {
       const page = '<ul>' + Object.entries(providers).map(([name, subApp]) => {
         return `<li><a href="${req.baseUrl}/${name}">${name}: ${subApp.locals.title}</a></li>`
       }).join('') + '</ul>'
       res.send(page)
     }
+  })
+  app.get('/providers', (req, res) => {
+    res.send(Object.entries(providers).map(([name, subApp]) => {
+      return {
+        name: name,
+        href: `${req.baseUrl}/${name}`,
+        title: subApp.locals.title,
+        logo: `${baseUrl(req)}/assets/${subApp.locals.logo}`,
+      }
+    }))
   })
   app.get('/logout', (req, res) => {
     if (req.session) {
