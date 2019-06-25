@@ -7,8 +7,8 @@ import session from 'express-session'
 import SessionFileStore from 'session-file-store'
 
 import Auth from './auth'
-import JSONFileDB from './user/JSONFileDB'
-import MoquiDB from './user/MoquiDB'
+import JSONFileDB from './db/JSONFileDB'
+import MoquiDB from './db/MoquiDB'
 
 const app = express()
 app.use(cors({
